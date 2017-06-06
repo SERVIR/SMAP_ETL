@@ -15,7 +15,7 @@ The code uses exposed API calls from the DAAC to identify and then download the 
 For instance, the following call can be made to identify the IDs of granules that are available for 2015-09-29:
     https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&version=004&temporal=2015-09-29T00:00:01Z/2015-09-29T23:59:59Z
 The results from this call are:
-```
+```html
 <results>
 	<hits>1</hits>
 	<took>11</took>
