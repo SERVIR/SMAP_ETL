@@ -1,6 +1,7 @@
-<p align="left">
- <img src="https://www.servirglobal.net/Portals/0/Images/Servir-logo.png" alt="SERVIR GLOBAL"/>
-</p>
+<a href="https://www.servirglobal.net//">
+    <img src="https://www.servirglobal.net/Portals/0/Images/Servir-logo.png" alt="SERVIR Global"
+         title="SERVIR Global" align="left" />
+</a>
 
 SMAP_ETL
 ========
