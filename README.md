@@ -1,7 +1,8 @@
 <a href="https://www.servirglobal.net//">
     <img src="https://www.servirglobal.net/Portals/0/Images/Servir-logo.png" alt="SERVIR Global"
-         title="SERVIR Global" align="left" />
+         title="SERVIR Global" align="right" />
 </a>
+
 
 SMAP_ETL
 ========
