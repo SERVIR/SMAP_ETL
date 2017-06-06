@@ -1,11 +1,17 @@
-# Last Modified By: Githika Tondapu
+# Last Modified By:
+#   Githika Tondapu - ~March 2017
+#   Lance Gilliland - June 5, 2017
+#       - Added a new GetStartDateFromdb() to include an updated SQLWhere; included specific fields in the query
+#           and sorted results in descending order to be able to grab the first result and then break from the for
+#           loop - this was done to help with performance.
+#       - Set arcpy.env.overwriteOutput = True in ExtractRasters() so that previously downloaded files could be
+#           reprocessed in case they were not successfully added to the mosaic dataset on last run; commented out the
+#           joinedPath code as it is not used; added back in: year = theName[5:9] that was somehow missing.
+#       - Minor readability edits and cleanup.
 
 import arcpy
 import datetime
-import pickle
-import time
 import glob
-import sys
 import os
 import shutil
 import logging
@@ -13,11 +19,13 @@ import urllib2
 import urllib
 import json
 import pickle
-#Get Start Date from E:\SERVIR\Data\Global\soil_moisture.gdb\soil_moisture
-def GetStartDateFromdb(mosaicDS):
+
+
+# Get Start Date from E:\SERVIR\Data\Global\soil_moisture.gdb\soil_moisture
+def orig_GetStartDateFromdb(mosaicDS):
     try:
-        Expression = "Name IS NOT NULL" #No names should be NULL, this is just precautionary
-        rows=arcpy.UpdateCursor(mosaicDS, Expression, '', '', "DateObtained ASC") 
+        Expression = "Name IS NOT NULL"  # No names should be NULL, this is just precautionary
+        rows = arcpy.UpdateCursor(mosaicDS, Expression, '', '', "DateObtained ASC")
         theDate = None
         for r in rows:
             theDate = r.dateObtained
@@ -25,46 +33,78 @@ def GetStartDateFromdb(mosaicDS):
             return datetime.datetime.strptime("2015/09/10", "%Y/%m/%d")
         return theDate
     except Exception, e:
-        logging.error('Error occured in GetStartDateFromdb, %s' % e)
+        logging.error('### Error occurred in GetStartDateFromdb ###, %s' % e)
         return None
-		
+
+
+    # Get Start Date from the specified Raster Mosaic Dataset.
+    # Note that the intent is to retrieve the date of the latest(last) successful load of raster data into the dataset.
+def GetStartDateFromdb(mosaicDS):
+        try:
+            SQLWhere = "Name IS NOT NULL AND DateObtained IS NOT NULL"
+            # Sort most recent date first (descending) so we can just grab the first row then break out of the for loop!
+            # Also, only request the Name and DateObtained fields as that is all we need and it should be faster.
+            rows = arcpy.SearchCursor(mosaicDS, SQLWhere, '', fields="Name; DateObtained", sort_fields="DateObtained D")
+            theDate = None
+            for r in rows:
+                theDate = r.dateObtained
+                break
+
+            if theDate is None:
+                theDate = datetime.datetime.strptime("2017/03/20", "%Y/%m/%d")
+
+            return theDate
+
+        except Exception, e:
+            logging.error('### Error occurred in GetStartDateFromdb ###, %s' % e)
+            return None
+
+
 # Extract to E:\Temp\SMAP_Extract\		
 def ExtractRasters(temp_workspace):
     try:
         arcpy.CheckOutExtension("Spatial")
         inSQLClause = "VALUE >= 0"
-        arcpy.env.workspace = temp_workspace # E:\Temp\SMAP_Extract\
+        arcpy.env.workspace = temp_workspace  # E:\Temp\SMAP_Extract\
+        arcpy.env.overwriteOutput = True  # Lance added...
         rasters = arcpy.ListRasters()
         for raster in rasters:
-            joinedPath = os.path.join(temp_workspace, 'temp\\')
-            if not os.path.exists(os.path.dirname(joinedPath)):
-                os.makedirs(os.path.dirname(joinedPath))  
+            # Lance - joinedPath doesn't seem to be used... commenting out
+            # joinedPath = os.path.join(temp_workspace, 'temp\\')
+            # if not os.path.exists(os.path.dirname(joinedPath)):
+            #     os.makedirs(os.path.dirname(joinedPath))
             extract = arcpy.sa.ExtractByAttributes(raster, inSQLClause)
-            finalRaster = os.path.join(myConfig['finalTranslateFolder'] , raster)
+            finalRaster = os.path.join(myConfig['finalTranslateFolder'], raster)
             extract.save(finalRaster)
-            arcpy.AddRastersToMosaicDataset_management(mosaicDS, "Raster Dataset", finalRaster,"UPDATE_CELL_SIZES", "NO_BOUNDARY", "NO_OVERVIEWS","2", "#", "#", "#", "#", "NO_SUBFOLDERS","EXCLUDE_DUPLICATES", "BUILD_PYRAMIDS", "CALCULATE_STATISTICS","NO_THUMBNAILS", "Add Raster Datasets","#")
+            arcpy.AddRastersToMosaicDataset_management(mosaicDS, "Raster Dataset", finalRaster, "UPDATE_CELL_SIZES",
+                                                       "NO_BOUNDARY", "NO_OVERVIEWS", "2", "#", "#", "#", "#",
+                                                       "NO_SUBFOLDERS", "EXCLUDE_DUPLICATES", "BUILD_PYRAMIDS",
+                                                       "CALCULATE_STATISTICS", "NO_THUMBNAILS", "Add Raster Datasets",
+                                                       "#")
             theName = os.path.splitext(raster)[0]
             Expression = "Name= '" + theName + "'" 
-            rows=arcpy.UpdateCursor(mosaicDS, Expression) # Establish Read Write access to data in the query expression.
+            rows = arcpy.UpdateCursor(mosaicDS, Expression)  # Establish r/w access to data in the query expression.
+            year = theName[5:9]  # Lance added...
             month = theName[9:11]
             day = theName[11:13]
             theStartDate = year + "/" + month + "/" + day
-            dt_obj = theStartDate #dt_str.strptime('%Y/%m/%d')
+            dt_obj = theStartDate  # dt_str.strptime('%Y/%m/%d')
             for r in rows:
-                r.dateObtained=dt_obj #here the value is being set in the proper field
-                rows.updateRow(r) #update the values
+                r.dateObtained = dt_obj  # here the value is being set in the proper field
+                rows.updateRow(r)  # update the values
             extract = None
-            del extract,rows
+            del extract, rows
         del rasters
     except Exception, e:
-        logging.error('Error occured in ExtractRasters, %s' % e)
+        logging.error('### Error occurred in ExtractRasters ###, %s' % e)
 
-# Restarting the ArcGIS Services (Stop and start)
+
+# Restarting the ArcGIS Service (Stop and Start)
 def refreshService():
     pkl_file = open('config.pkl', 'rb')
-    myConfig = pickle.load(pkl_file) #store the data from config.pkl file
+    myConfig = pickle.load(pkl_file)  # store the data from config.pkl file
     pkl_file.close()
-    current_Description = "SMAP Mosaic Dataset Service"
+    #current_Description = "SMAP Mosaic Dataset Service"
     current_AdminDirURL = myConfig['current_AdminDirURL']
     current_Username = myConfig['current_Username']
     current_Password = myConfig['current_Password']
@@ -88,13 +128,13 @@ def refreshService():
         stopStatus = stopResponseJSON["status"]
 
         if stopStatus <> "success":
-            logging.warning("SMAP Stop Service: Unable to stop service "+str(current_FolderName)+"/"+str(current_ServiceName)+"/"+str(current_ServiceType)+" STATUS = "+stopStatus)
+            logging.warning("SMAP Stop Service: UNABLE TO STOP SERVICE "+str(current_FolderName)+"/"+str(current_ServiceName)+"/"+str(current_ServiceType)+" STATUS = "+stopStatus)
         else:
             logging.info("SMAP Stop Service: Service: " + str(current_ServiceName) + " has been stopped.")
 
     except Exception, e:
-        logging.error("SMAP Stop Service: ERROR, Stop Service failed for " + str(current_ServiceName) + ", System Error Message: "+ str(e))
-# Try and start each service
+        logging.error("SMAP Stop Service: ### ERROR ### - Stop Service failed for " + str(current_ServiceName) + ", System Error Message: "+ str(e))
+    # Try and start each service
     try:
         # Get a token from the Administrator Directory
         tokenParams = urllib.urlencode({"f":"json","username":current_Username,"password":current_Password,"client":"requestip"})
@@ -111,11 +151,12 @@ def refreshService():
         if startStatus == "success":
             logging.info("SMAP start Service: Started service "+str(current_FolderName)+"/"+str(current_ServiceName)+"/"+str(current_ServiceType))
         else:
-            logging.warning("SMAP start Service: Unable to start service "+str(current_FolderName)+"/"+str(current_ServiceName)+"/"+str(current_ServiceType)+" STATUS = "+startStatus)
+            logging.warning("SMAP start Service: UNABLE TO START SERVICE "+str(current_FolderName)+"/"+str(current_ServiceName)+"/"+str(current_ServiceType)+" STATUS = "+startStatus)
     except Exception, e:
-        logging.error("SMAP start Service: ERROR, Start Service failed for " + str(current_ServiceName) + ", System Error Message: "+ str(e))
+        logging.error("SMAP start Service: ### ERROR ### - Start Service failed for " + str(current_ServiceName) + ", System Error Message: "+ str(e))
 
-# Clean the extract folder E:\Temp\VIC_Extract\
+
+# Clean out the extract folder
 def cleanExtractFolder():
     folder = myConfig['extract_Folder']
     for the_file in os.listdir(folder):
@@ -124,28 +165,29 @@ def cleanExtractFolder():
             if os.path.isfile(file_path):
                 os.unlink(file_path)
         except Exception, e:
-            logging.error('Error occured in cleanExtractFolder removing files, %s' % e)
+            logging.error('### Error occurred in cleanExtractFolder removing files ###, %s' % e)
     try:
-        shutil.rmtree(folder +'info', ignore_errors = True)
+        shutil.rmtree(folder + 'info', ignore_errors=True)
     except Exception, e:
-            logging.error('Error occured in cleanExtractFolder removing info folder, %s' % e)
+            logging.error('### Error occurred in cleanExtractFolder removing info folder ###, %s' % e)
     try:
-        shutil.rmtree(folder +'temp', ignore_errors = True)
+        shutil.rmtree(folder + 'temp', ignore_errors=True)
     except Exception, e:
-            logging.error('Error occured in cleanExtractFolder removing temp folder, %s' % e)
+            logging.error('### Error occurred in cleanExtractFolder removing temp folder ###, %s' % e)
 
-# Delete out dated files in E:\SERVIR\Data\Global\soil_moisture
+
+# Delete outdated files in E:\SERVIR\Data\Global\soil_moisture
 def deleteOutOfDateRasters(mymosaicDS):
     try:
         earlier = datetime.datetime.now() - datetime.timedelta(days=90)
-        query = "DateObtained < date '"+earlier.strftime('%Y-%m-%d')+"'"
+        query = "DateObtained < date '" + earlier.strftime('%Y-%m-%d') + "'"
         arcpy.RemoveRastersFromMosaicDataset_management(mymosaicDS, query,
                                                         "UPDATE_BOUNDARY", "MARK_OVERVIEW_ITEMS",
                                                         "DELETE_OVERVIEW_IMAGES")
         files = glob.glob(myConfig['finalTranslateFolder'] + "\*.tif")
         rasterses = []
         for file in files:
-            theName = file.rsplit('\\',1)[-1]
+            theName = file.rsplit('\\', 1)[-1]
             theDate = theName.rsplit('_')[1]
             dateObject = datetime.datetime.strptime(theDate, "%Y%m%d")
             if earlier > dateObject:
@@ -154,57 +196,79 @@ def deleteOutOfDateRasters(mymosaicDS):
         for oldraster in rasterses:
             arcpy.Delete_management(oldraster) 
     except Exception, e:
-            logging.error('Error occured in deleteOutOfDateRasters, %s' % e)
-#************************************************INIT PROCESS****************************************
+            logging.error('### Error occurred in deleteOutOfDateRasters ###, %s' % e)
+
+
+# *********************************************SCRIPT ENTRY POINT*************************************
+# ************************************************INIT PROCESS****************************************
 print "SMAP ETL just started"
 pkl_file = open('config.pkl', 'rb')
 myConfig = pickle.load(pkl_file)
 pkl_file.close()
 logDir = myConfig['logFileDir']
-logging.basicConfig(filename=logDir+ '\SMAP_log_'+datetime.date.today().strftime('%Y-%m-%d')+'.log',level=logging.DEBUG, format='%(asctime)s: %(levelname)s --- %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p')
+logging.basicConfig(filename=logDir + '\SMAP_log_' + datetime.date.today().strftime('%Y-%m-%d') + '.log',
+                    level=logging.DEBUG,
+                    format='%(asctime)s: %(levelname)s --- %(message)s',
+                    datefmt='%m/%d/%Y %I:%M:%S %p')
 logging.info('SMAP ETL started')
 mosaicDS = myConfig['mosaicDS']
 numProcessed = 0
-#************************************************Extract PROCESS****************************************
+# ************************************************Extract PROCESS****************************************
 theStartDate = GetStartDateFromdb(mosaicDS)
 logging.info('SMAP ETL start date created')
-if theStartDate == None:
-    logging.warn('SMAP ETL did not run because the start date was unavailable')
+
+if theStartDate is None:
+    logging.warn('### ERROR### SMAP ETL did not run because could not determine start date.')
 else:
     logging.info('Last Date Processed: %s' % theStartDate.strftime('%Y-%m-%d'))
-    while (theStartDate.date() <  datetime.date.today()):
+
+    # Debug code for testing!!!
+    # fiveDays = datetime.timedelta(days=5)
+    # StartDatePlus5 = theStartDate + fiveDays
+    # while theStartDate.date() < StartDatePlus5.date():
+    while theStartDate.date() < datetime.date.today():
         theStartDate += datetime.timedelta(days=1)
         tempDate = theStartDate.strftime('%Y-%m-%d')
-        granulesUrl = "http://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&version=004&temporal="+tempDate+"T00:00:01Z/"+tempDate+"T23:59:59Z"
+        # Check URL for granule
+        granulesUrl = "https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&version=004&temporal="+tempDate+"T00:00:01Z/"+tempDate+"T23:59:59Z"
         response = urllib2.urlopen(granulesUrl)
         html = response.read()
         startValue = html.find("<name>") + 6
-        if(startValue > 7):
+
+        if startValue > 7:
+            # Parse granule name/ID
             endValue = html.find("</name>") - len(html)
             parsedName = html[startValue:endValue]
             lastColon = parsedName.rfind(':')
             finalName = parsedName[lastColon + 1:len(parsedName)]
-            logging.info('Final name: ' + 	finalName)		
-            logging.info('File Downloaded: \SMAP_' + theStartDate.strftime('%Y%m%d') + '_soil_moisture.tif')
-            numProcessed += 1
+            logging.info('New granule name: ' + finalName)
+
             rasterFile = myConfig['extract_Folder'] + 'SMAP_' + theStartDate.strftime('%Y%m%d') + '_soil_moisture.tif'
-            logging.info('File location: ' + rasterFile)
-			# URL to download files
+            logging.info('File to be downloaded: ' + rasterFile)
+
+            # Build and check URL to download granule file
             url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&version=004&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
-            logging.info('File url: ' + url)            
+            logging.info('Granule file url: ' + url)
             response = urllib.urlopen(url)
-            logging.info('File url: ' + url)
-            data = response.read()  
+            data = response.read()
             if not os.path.exists(os.path.dirname(rasterFile)):
                 os.makedirs(os.path.dirname(rasterFile))   
-            out_file =open(rasterFile, 'wb') 
+            out_file = open(rasterFile, 'wb')
             out_file.write(data)
             out_file.close()
-        print theStartDate.strftime('%Y-%m-%d')
+            numProcessed += 1
+
+        print tempDate
+
+    # Up to here, we have downloaded the raster file granules to the temp processing extract folder, but now we need to
+    # process the files and extract only the values > 0, saving the results to the final raster translate folder.
     ExtractRasters(myConfig['extract_Folder'])
+    # Cleanup the temporary extract folder(s)
     cleanExtractFolder()
+    # Remove/delete the mosaic dataset entries older than the agreed upon timeframe.
     deleteOutOfDateRasters(mosaicDS)
+
 refreshService()
 logging.info('Total number of processed files for this run: %s' % numProcessed)
 logging.info('******************************SMAP ETL finished************************************************')
-print 'SMAP ETL Just finished'
+print 'SMAP ETL just finished'
