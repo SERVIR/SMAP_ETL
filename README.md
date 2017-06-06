@@ -6,7 +6,7 @@ SMAP_ETL
 ========
 
 ## Introduction:
-The SMAP ETL (Extract, Transform, and Load) fetches soil moisture active and passive data (“SMAP L3 Radiometer Global Daily 36 km EASE-Grid Soil Moisture V004” or “SPL3SMP”) from the National Snow and Ice Data Center and processes/loads the data into a file geodatabase mosaic dataset that is supporting a WMS.
+The SMAP ETL (Extract, Transform, and Load) fetches soil moisture active and passive data (“SMAP L3 Radiometer Global Daily 36 km EASE-Grid Soil Moisture V004” or “SPL3SMP”) from the [National Snow and Ice Data Center](https://nsidc.org/) and processes/loads the data into a file geodatabase mosaic dataset that is supporting a WMS.
 
 ## Details: 
 The code uses exposed API calls from the DAAC to identify and then download the latest granules.
