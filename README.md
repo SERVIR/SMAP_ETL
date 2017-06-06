@@ -8,7 +8,7 @@ SMAP_ETL
 ========
 
 ## Introduction:
-The SMAP ETL (Extract, Transform, and Load) fetches soil moisture active and passive data (“SMAP L3 Radiometer Global Daily 36 km EASE-Grid Soil Moisture V004” or “SPL3SMP”) from the [National Snow and Ice Data Center](https://nsidc.org/) and processes/loads the data into a file geodatabase mosaic dataset that is supporting a WMS.
+The SMAP ETL (Extract, Transform, and Load) fetches soil moisture active and passive data (“SMAP L3 Radiometer Global Daily 36 km EASE-Grid Soil Moisture V004” or “SPL3SMP”) from the [National Snow and Ice Data Center](https://nsidc.org/) and processes/loads the data into a file geodatabase mosaic dataset that is supporting a [WMS](http://gis1.servirglobal.net/arcgis/rest/services/Global/SoilMoisture/MapServer).
 
 ## Details: 
 The code uses exposed API calls from the DAAC to identify and then download the latest granules.
@@ -35,7 +35,7 @@ The resulting ID:  105651253 can then be used in the following call to download 
 The script initially queries the file gdb mosaic dataset for the most recent date processed. Then, starting from that date, it uses the methods above to download the files up to the current date.  Once the most recent granules are downloaded to a temp folder, the script then processes each file and extracts only pixel values > 0 and saves the resulting files into the source folder supporting the mosaic dataset. Then, the files are loaded into the mosaic dataset.  A check is made to remove/delete any antries in the mosaic dataset that are older than 90 days.  Finally, the temp download folder is cleaned up, and the corresponding ArcGIS WMS service is stopped and restarted.
 
 ## Environment:
-SMAP_ETL.py is the main script file and was created and tested with python 2.7. The script relies on Esri's Arcpy module, as well as their Spatial Analyst extension for the ExtractByAttributes() method.
+SMAP_ETL.py is the main script file and was created and tested with python 2.7. The script relies on Esri's Arcpy module, as well as their Spatial Analyst extension for the ExtractByAttributes() method.  The tif granules are loaded into a raster mosaic dataset within an Esri file geodatabase.
 
 ## Instructions to prep the script for running on a machine:
 1.	Go to SMAPPickle.py and enter your paths and credentials
