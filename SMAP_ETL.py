@@ -4,7 +4,7 @@
 #       - Added a new GetStartDateFromdb() to include an updated SQLWhere; included specific fields in the query
 #           and sorted results in descending order to be able to grab the first result and then break from the for
 #           loop - this was done to help with performance.
-#       - Set arcpy.env.overwriteOutput = True in ExtractRasters() so that previously downloaded files could be
+#       - Set arcpy.env.overwriteOutput = True in LoadRasters() so that previously downloaded files could be
 #           reprocessed in case they were not successfully added to the mosaic dataset on last run; commented out the
 #           joinedPath code as it is not used; added back in: year = theName[5:9] that was somehow missing.
 #       - Minor readability edits and cleanup.
@@ -61,7 +61,7 @@ def GetStartDateFromdb(mosaicDS):
 
 
 # Extract to E:\Temp\SMAP_Extract\		
-def ExtractRasters(temp_workspace):
+def LoadRasters(temp_workspace):
     try:
         arcpy.CheckOutExtension("Spatial")
         inSQLClause = "VALUE >= 0"
@@ -69,34 +69,38 @@ def ExtractRasters(temp_workspace):
         arcpy.env.overwriteOutput = True  # Lance added...
         rasters = arcpy.ListRasters()
         for raster in rasters:
-            # Lance - joinedPath doesn't seem to be used... commenting out
-            # joinedPath = os.path.join(temp_workspace, 'temp\\')
-            # if not os.path.exists(os.path.dirname(joinedPath)):
-            #     os.makedirs(os.path.dirname(joinedPath))
-            extract = arcpy.sa.ExtractByAttributes(raster, inSQLClause)
-            finalRaster = os.path.join(myConfig['finalTranslateFolder'], raster)
-            extract.save(finalRaster)
-            arcpy.AddRastersToMosaicDataset_management(mosaicDS, "Raster Dataset", finalRaster, "UPDATE_CELL_SIZES",
-                                                       "NO_BOUNDARY", "NO_OVERVIEWS", "2", "#", "#", "#", "#",
-                                                       "NO_SUBFOLDERS", "EXCLUDE_DUPLICATES", "BUILD_PYRAMIDS",
-                                                       "CALCULATE_STATISTICS", "NO_THUMBNAILS", "Add Raster Datasets",
-                                                       "#")
-            theName = os.path.splitext(raster)[0]
-            Expression = "Name= '" + theName + "'" 
-            rows = arcpy.UpdateCursor(mosaicDS, Expression)  # Establish r/w access to data in the query expression.
-            year = theName[5:9]  # Lance added...
-            month = theName[9:11]
-            day = theName[11:13]
-            theStartDate = year + "/" + month + "/" + day
-            dt_obj = theStartDate  # dt_str.strptime('%Y/%m/%d')
-            for r in rows:
-                r.dateObtained = dt_obj  # here the value is being set in the proper field
-                rows.updateRow(r)  # update the values
-            extract = None
-            del extract, rows
+            # In case the file is not a valid raster file...  add a try / catch exception
+            try:
+                logging.info('Processing file: %s' % raster)
+                print ('Processing file: %s' % raster)
+                extract = arcpy.sa.ExtractByAttributes(raster, inSQLClause)
+                finalRaster = os.path.join(myConfig['finalTranslateFolder'], raster)
+                extract.save(finalRaster)
+                arcpy.AddRastersToMosaicDataset_management(mosaicDS, "Raster Dataset", finalRaster, "UPDATE_CELL_SIZES",
+                                                           "NO_BOUNDARY", "NO_OVERVIEWS", "2", "#", "#", "#", "#",
+                                                           "NO_SUBFOLDERS", "EXCLUDE_DUPLICATES", "BUILD_PYRAMIDS",
+                                                           "CALCULATE_STATISTICS", "NO_THUMBNAILS", "Add Raster Datasets",
+                                                           "#")
+                theName = os.path.splitext(raster)[0]
+                Expression = "Name= '" + theName + "'"
+                rows = arcpy.UpdateCursor(mosaicDS, Expression)  # Establish r/w access to data in the query expression.
+                year = theName[5:9]  # Lance added...
+                month = theName[9:11]
+                day = theName[11:13]
+                theStartDate = year + "/" + month + "/" + day
+                dt_obj = theStartDate  # dt_str.strptime('%Y/%m/%d')
+                for r in rows:
+                    r.dateObtained = dt_obj  # here the value is being set in the proper field
+                    rows.updateRow(r)  # update the values
+                extract = None
+                del extract, rows
+            except Exception, e:
+                logging.warning('### Error processing file! SKIPPING! ###, %s' % e)
+                print ('### Error processing file! - Skipping... ###')
+
         del rasters
     except Exception, e:
-        logging.error('### Error occurred in ExtractRasters ###, %s' % e)
+        logging.error('### Error occurred in LoadRasters ###, %s' % e)
 
 
 # Restarting the ArcGIS Service (Stop and Start)
@@ -201,7 +205,7 @@ def deleteOutOfDateRasters(mymosaicDS):
 
 # *********************************************SCRIPT ENTRY POINT*************************************
 # ************************************************INIT PROCESS****************************************
-print "SMAP ETL just started"
+print "SMAP ETL Started"
 pkl_file = open('config.pkl', 'rb')
 myConfig = pickle.load(pkl_file)
 pkl_file.close()
@@ -210,25 +214,31 @@ logging.basicConfig(filename=logDir + '\SMAP_log_' + datetime.date.today().strft
                     level=logging.DEBUG,
                     format='%(asctime)s: %(levelname)s --- %(message)s',
                     datefmt='%m/%d/%Y %I:%M:%S %p')
-logging.info('SMAP ETL started')
+logging.info('******************************SMAP ETL Started************************************************')
 mosaicDS = myConfig['mosaicDS']
 numProcessed = 0
 # ************************************************Extract PROCESS****************************************
-theStartDate = GetStartDateFromdb(mosaicDS)
-logging.info('SMAP ETL start date created')
+# DEBUGGING CODE!!!
+# theStartDate = datetime.datetime.strptime("2017/08/13", "%Y/%m/%d")
+theStartDate = GetStartDateFromdb(mosaicDS)   # Original code...
 
 if theStartDate is None:
     logging.warn('### ERROR### SMAP ETL did not run because could not determine start date.')
 else:
-    logging.info('Last Date Processed: %s' % theStartDate.strftime('%Y-%m-%d'))
+    logging.info('Last Date Entry in Database: %s' % theStartDate.strftime('%Y-%m-%d'))
 
-    # Debug code for testing!!!
-    # fiveDays = datetime.timedelta(days=5)
-    # StartDatePlus5 = theStartDate + fiveDays
-    # while theStartDate.date() < StartDatePlus5.date():
+    logging.info('---------- Beginning File Downloads ----------')
+    print "--- Beginning File Downloads ---"
+
+    # DEBUGGING CODE!!!
+    # threeDays = datetime.timedelta(days=3)
+    # StartDatePlus3 = theStartDate + threeDays
+    # while theStartDate.date() < StartDatePlus3.date():
     while theStartDate.date() < datetime.date.today():
         theStartDate += datetime.timedelta(days=1)
         tempDate = theStartDate.strftime('%Y-%m-%d')
+        print tempDate
+
         # Check URL for granule
         granulesUrl = "https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&version=004&temporal="+tempDate+"T00:00:01Z/"+tempDate+"T23:59:59Z"
         response = urllib2.urlopen(granulesUrl)
@@ -251,24 +261,40 @@ else:
             logging.info('Granule file url: ' + url)
             response = urllib.urlopen(url)
             data = response.read()
-            if not os.path.exists(os.path.dirname(rasterFile)):
-                os.makedirs(os.path.dirname(rasterFile))   
-            out_file = open(rasterFile, 'wb')
-            out_file.write(data)
-            out_file.close()
-            numProcessed += 1
+            # NOTE! The source file might actually be missing from the DAAC and if so, the return value will be a
+            # URL XML response.  So check to see if the response contains a string of "xml".  If so, we know it is not
+            # the desired raster file.
+            if 'xml' in data[:20]:
+                # UH OH - data should contain a binary raster file...
+                # ...this means that the raster file must not exist for download.
+                logging.warn('### File is NOT a valid raster! Skipping: %s ###' % rasterFile)
+            else:
+                # Assume that the file was a raster and downloaded ok. Save it.
+                if not os.path.exists(os.path.dirname(rasterFile)):
+                    os.makedirs(os.path.dirname(rasterFile))
+                out_file = open(rasterFile, 'wb')
+                out_file.write(data)
+                out_file.close()
+                numProcessed += 1
 
-        print tempDate
-
+    # ************************************************Transform and Load PROCESS****************************************
     # Up to here, we have downloaded the raster file granules to the temp processing extract folder, but now we need to
     # process the files and extract only the values > 0, saving the results to the final raster translate folder.
-    ExtractRasters(myConfig['extract_Folder'])
+    logging.info('---------- Loading new Rasters to Mosaic ----------')
+    print "--- Loading new Rasters to Mosaic ---"
+    LoadRasters(myConfig['extract_Folder'])
+
     # Cleanup the temporary extract folder(s)
+    logging.info('---------- Cleaning up Processing Folder ----------')
+    print "--- Cleaning up Processing Folder ---"
     cleanExtractFolder()
+
     # Remove/delete the mosaic dataset entries older than the agreed upon timeframe.
+    logging.info('---------- Removing out of date Rasters from Mosaic ----------')
+    print "--- Removing out of date Rasters from Mosaic ---"
     deleteOutOfDateRasters(mosaicDS)
 
 refreshService()
 logging.info('Total number of processed files for this run: %s' % numProcessed)
-logging.info('******************************SMAP ETL finished************************************************')
-print 'SMAP ETL just finished'
+logging.info('******************************SMAP ETL Finished************************************************')
+print 'SMAP ETL Finished'
