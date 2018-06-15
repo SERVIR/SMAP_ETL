@@ -185,6 +185,7 @@ def deleteOutOfDateRasters(mymosaicDS):
     try:
         earlier = datetime.datetime.now() - datetime.timedelta(days=90)
         query = "DateObtained < date '" + earlier.strftime('%Y-%m-%d') + "'"
+        logging.info('Removing rasters from Mosaic DS where: ' + query)
         arcpy.RemoveRastersFromMosaicDataset_management(mymosaicDS, query,
                                                         "UPDATE_BOUNDARY", "MARK_OVERVIEW_ITEMS",
                                                         "DELETE_OVERVIEW_IMAGES")
@@ -219,7 +220,7 @@ mosaicDS = myConfig['mosaicDS']
 numProcessed = 0
 # ************************************************Extract PROCESS****************************************
 # DEBUGGING CODE!!!
-# theStartDate = datetime.datetime.strptime("2017/08/13", "%Y/%m/%d")
+# theStartDate = datetime.datetime.strptime("2018/06/03", "%Y/%m/%d")
 theStartDate = GetStartDateFromdb(mosaicDS)   # Original code...
 
 if theStartDate is None:
@@ -230,7 +231,7 @@ else:
     logging.info('---------- Beginning File Downloads ----------')
     print "--- Beginning File Downloads ---"
 
-    # DEBUGGING CODE!!!
+    # DEBUGGING CODE!!! Only test a few days at a time...
     # threeDays = datetime.timedelta(days=3)
     # StartDatePlus3 = theStartDate + threeDays
     # while theStartDate.date() < StartDatePlus3.date():
@@ -240,7 +241,9 @@ else:
         print tempDate
 
         # Check URL for granule
-        granulesUrl = "https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&version=004&temporal="+tempDate+"T00:00:01Z/"+tempDate+"T23:59:59Z"
+        # 6/15/2018 - Remove version parameter as the version changes from time to time...
+        # granulesUrl = "https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&version=004&temporal="+tempDate+"T00:00:01Z/"+tempDate+"T23:59:59Z"
+        granulesUrl = "https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&temporal="+tempDate+"T00:00:01Z/"+tempDate+"T23:59:59Z"
         response = urllib2.urlopen(granulesUrl)
         html = response.read()
         startValue = html.find("<name>") + 6
@@ -257,7 +260,9 @@ else:
             logging.info('File to be downloaded: ' + rasterFile)
 
             # Build and check URL to download granule file
-            url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&version=004&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
+            # 6/15/2018 - Remove version parameter as the version changes from time to time...
+            # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&version=004&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
+            url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
             logging.info('Granule file url: ' + url)
             response = urllib.urlopen(url)
             data = response.read()
