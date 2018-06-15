@@ -263,7 +263,7 @@ else:
             # 6/15/2018 - Remove version parameter as the version changes from time to time...
             # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&version=004&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
             url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
-            logging.info('Granule file url: ' + url)
+            # logging.info('Granule file url: ' + url)
             response = urllib.urlopen(url)
             data = response.read()
             # NOTE! The source file might actually be missing from the DAAC and if so, the return value will be a
