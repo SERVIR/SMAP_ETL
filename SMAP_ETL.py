@@ -19,6 +19,8 @@ import urllib2
 import urllib
 import json
 import pickle
+import requests  # Needed for create_token()
+import socket  # Needed for create_token()
 
 
 # Get Start Date from E:\SERVIR\Data\Global\soil_moisture.gdb\soil_moisture
@@ -204,6 +206,45 @@ def deleteOutOfDateRasters(mymosaicDS):
             logging.error('### Error occurred in deleteOutOfDateRasters ###, %s' % e)
 
 
+def create_token (uid, pswd):
+    try:
+        #import XML Element Tree
+        from xml.etree.ElementTree import Element, SubElement, Comment, tostring
+
+        #Find IP address
+        hostname = socket.gethostname()
+        IP = socket.gethostbyname(hostname)
+
+        #Create XML input
+        token = Element('token')
+        username = SubElement(token, 'username')
+        username.text = uid
+        password = SubElement(token, 'password')
+        password.text = pswd
+        client_id = SubElement(token, 'client_id')
+        client_id.text = 'NSIDC_client_id'
+        user_ip_address = SubElement(token, 'user_ip_address')
+        user_ip_address.text = IP
+
+        # xml = (tostring(token, encoding='unicode', method='xml'))
+        xml = (tostring(token, encoding='us-ascii', method='xml'))
+
+        # Request token from Common Metadata Repository
+        headers = {'Content-Type': 'application/xml'}
+        token = requests.post('https://api.echo.nasa.gov/echo-rest/tokens', data=xml, headers=headers)
+        output = token.text
+
+        # Grab token string
+        start = '<id>'
+        end = '</id>'
+        tokenval = (output.split(start))[1].split(end)[0]
+
+        return tokenval
+
+    except Exception, e:
+            logging.error('### Error occurred in create_token() ###, %s' % e)
+
+
 # *********************************************SCRIPT ENTRY POINT*************************************
 # ************************************************INIT PROCESS****************************************
 print "SMAP ETL Started"
@@ -220,13 +261,19 @@ mosaicDS = myConfig['mosaicDS']
 numProcessed = 0
 # ************************************************Extract PROCESS****************************************
 # DEBUGGING CODE!!!
-# theStartDate = datetime.datetime.strptime("2018/06/03", "%Y/%m/%d")
+# theStartDate = datetime.datetime.strptime("2019/02/21", "%Y/%m/%d")
 theStartDate = GetStartDateFromdb(mosaicDS)   # Original code...
 
 if theStartDate is None:
     logging.warn('### ERROR### SMAP ETL did not run because could not determine start date.')
 else:
     logging.info('Last Date Entry in Database: %s' % theStartDate.strftime('%Y-%m-%d'))
+
+    logging.info('---------- Generating CMR ECHO API token ----------')
+    print "--- Generating CMR ECHO API token ---"
+    # LG 3/25/2019 - Request CMR ECHO API token. Requires "EarthData" (https://urs.earthdata.nasa.gov/) login.
+    # Tokens are valid for 30 days. Grab one here and use it multiple times below.
+    token = create_token(myConfig['EarthData_User'], myConfig['EarthData_Pass'])
 
     logging.info('---------- Beginning File Downloads ----------')
     print "--- Beginning File Downloads ---"
@@ -260,9 +307,12 @@ else:
             logging.info('File to be downloaded: ' + rasterFile)
 
             # Build and check URL to download granule file
-            # 6/15/2018 - Remove version parameter as the version changes from time to time...
             # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&version=004&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
-            url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
+            # 6/15/2018 - Remove version parameter as the version changes from time to time...
+            # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
+            # 3/25/2019 - Include dynamic token generated above...
+            url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(token) + '&email=lance.gilliland@nasa.gov&FILE_IDS=' + finalName
+
             # logging.info('Granule file url: ' + url)
             response = urllib.urlopen(url)
             data = response.read()
@@ -299,6 +349,7 @@ else:
     print "--- Removing out of date Rasters from Mosaic ---"
     deleteOutOfDateRasters(mosaicDS)
 
+# Refresh the service to reflect any changes...
 refreshService()
 logging.info('Total number of processed files for this run: %s' % numProcessed)
 logging.info('******************************SMAP ETL Finished************************************************')
