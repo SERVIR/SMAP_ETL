@@ -261,7 +261,7 @@ mosaicDS = myConfig['mosaicDS']
 numProcessed = 0
 # ************************************************Extract PROCESS****************************************
 # DEBUGGING CODE!!!
-# theStartDate = datetime.datetime.strptime("2019/02/21", "%Y/%m/%d")
+# theStartDate = datetime.datetime.strptime("2019/08/12", "%Y/%m/%d")
 theStartDate = GetStartDateFromdb(mosaicDS)   # Original code...
 
 if theStartDate is None:
@@ -311,7 +311,9 @@ else:
             # 6/15/2018 - Remove version parameter as the version changes from time to time...
             # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=75E5CEBE-6BBB-2FB5-A613-0368A361D0B6&email=billy.ashmall@nasa.gov&FILE_IDS=' + finalName
             # 3/25/2019 - Include dynamic token generated above...
-            url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(token) + '&email=lance.gilliland@nasa.gov&FILE_IDS=' + finalName
+            # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(token) + '&email=lance.gilliland@nasa.gov&FILE_IDS=' + finalName
+            # 9/2/2019 - With version 6 of the data starting 8/13/2019, we now have to specify the "subagent type" to get the .tif post processed file
+            url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(token) + '&email=lance.gilliland@nasa.gov&SUBAGENT_ID=HEG&FILE_IDS=' + finalName
 
             # logging.info('Granule file url: ' + url)
             response = urllib.urlopen(url)
