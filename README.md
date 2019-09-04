@@ -30,7 +30,13 @@ The results from this call are:
 </results>
 ```
 The resulting ID:  105651253 can then be used in the following call to download the related granule(tif) file:
-    https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&version=004&format=GeoTIFF&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&FILE_IDS=105651253
+(as of 3/25/2019, the code must dynamically generate and pass an API token with the URL call. See code for more detail.)
+(as of 8/13/2019, an additional parameter called 'subagent_id' must be passed to identify the post-processed file type to return, the value "HEG" should be used for .TIF)
+    https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(token) + &SUBAGENT_ID=HEG&FILE_IDS=105651253
+
+    Not passing the API token will require an interactive login to the NASA EOSDIS system... i.e.
+    https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&SUBAGENT_ID=HEG&FILE_IDS=105651253
+
 
 The script initially queries the file gdb mosaic dataset for the most recent date processed. Then, starting from that date, it uses the methods above to download the files up to the current date.  Once the most recent granules are downloaded to a temp folder, the script then processes each file and extracts only pixel values > 0 and saves the resulting files into the source folder supporting the mosaic dataset. Then, the files are loaded into the mosaic dataset.  A check is made to remove/delete any antries in the mosaic dataset that are older than 90 days.  Finally, the temp download folder is cleaned up, and the corresponding ArcGIS WMS service is stopped and restarted.
 
