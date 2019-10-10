@@ -231,7 +231,8 @@ def create_token (uid, pswd):
 
         # Request token from Common Metadata Repository
         headers = {'Content-Type': 'application/xml'}
-        token = requests.post('https://api.echo.nasa.gov/echo-rest/tokens', data=xml, headers=headers)
+        # token = requests.post('https://api.echo.nasa.gov/echo-rest/tokens', data=xml, headers=headers)
+        token = requests.post('https://cmr.earthdata.nasa.gov/legacy-services/rest/tokens', data=xml, headers=headers)
         output = token.text
 
         # Grab token string
