@@ -43,15 +43,17 @@ The script initially queries the file gdb mosaic dataset for the most recent dat
 Note! - The version parameter (included above) has been removed from the actual calls to the API. Occasionally, edits to the data will cause the version number to change, and we want to make sure we are always getting the latest version. 
 
 ## Environment:
-SMAP_ETL.py is the main script file and was created and tested with python 2.7. The script relies on Esri's Arcpy module, as well as their Spatial Analyst extension for the ExtractByAttributes() method.  The tif granules are loaded into a raster mosaic dataset within an Esri file geodatabase.
+SMAP_ETL.py is the main script file and has been updated to python 3.7. The script relies on Esri's ArcGIS Pro Arcpy module, as well as their Spatial Analyst extension for the ExtractByAttributes() method.  The tif granules are loaded into a raster mosaic dataset within an Esri file geodatabase.
+Esri is moving away from ArcGIS Desktop and to ArcGIS Pro, therefore, this script relies on (a copy of) the python environment delivered with Pro 2.9.
+The default Pro python env. is read only, so a copy of the default env. was made (using the Pro Python Package Manager - see https://pro.arcgis.com/en/pro-app/latest/arcpy/get-started/what-is-conda.htm), moved into the SMAP project folder, and referenced as the interpreter for this project.
 
 ## Instructions to prep the script for running on a machine:
 1.	Go to SMAPPickle.py and enter your paths and credentials
-2.	Save and run SmapPickle.py. This should generate config.pkl file in the same folder. The config.pkl file is required for the script.
+2.	Save and run SmapPickle.py. This should generate config.pkl file in the same folder. The config.pkl file is required for the main script.
 3.  Verify the python path inside SMAP_ETL.bat then run it to execute the python script.
 
 ## Instructions to schedule the task to run on a machine:
 1.	Under Administrative Tools, go to Task Scheduler.
 2.	Click on "Create Task" in the right pane and enter details.
 3.	Schedule the task in Triggers tab.
-4.	Upload the SMAP_ETL.bat file in the Actions tab.
+4.	Identify the SMAP_ETL.bat file in the Actions tab.
