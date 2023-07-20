@@ -2,6 +2,7 @@
 #   Githika Tondapu - ~March 2017
 #   Lance Gilliland - June 5, 2017
 #   Lance Gilliland - February 19, 2022
+#   Githika Tondapu - July 20, 2023
 #   - Migrated code from python 2.7 to python 3.7 to work with a new ArcGIS server (10.9.1) and ArcGIS Pro (2.9).
 #   - This script was specifically created to support an Esri service, thus the use of a mosaic dataset,
 #     ArcPy, ArcGIS Pro python conda environment, etc.
@@ -16,7 +17,7 @@
 #
 #     This code currently uses both the "requests" and "urllib.*" libraries. A future enhancement would
 #     be to switch to using the requests library and eliminate the urllib.* libs.
-
+from requests.auth import HTTPBasicAuth
 import arcpy
 import datetime
 import glob
@@ -30,10 +31,10 @@ import pickle
 import urllib.request  # required in the main entry function and refreshService3x()
 import urllib.parse  # required for refreshService3x()
 import json  # required for refreshService3x()
-
 import requests  # Needed for create_token()
 import socket  # Needed for create_token()
-
+import urllib
+import json
 
 def GetStartDateFromdb(mosDS):
     # Get Start Date from the specified Raster Mosaic Dataset.
@@ -289,6 +290,7 @@ def deleteOutOfDateRasters(mymosaicDS):
 
 
 def create_token(uid, pswd):
+    op=None
     try:
         # import XML Element Tree
         from xml.etree.ElementTree import Element, SubElement, Comment, tostring
@@ -307,25 +309,16 @@ def create_token(uid, pswd):
         client_id.text = 'NSIDC_client_id'
         user_ip_address = SubElement(token, 'user_ip_address')
         user_ip_address.text = IP
-
-        # xml = (tostring(token, encoding='unicode', method='xml'))
         xml = (tostring(token, encoding='us-ascii', method='xml'))
-
-        # Request token from Common Metadata Repository
-        headers = {'Content-Type': 'application/xml'}
-        # token = requests.post('https://api.echo.nasa.gov/echo-rest/tokens', data=xml, headers=headers)
-        token = requests.post('https://cmr.earthdata.nasa.gov/legacy-services/rest/tokens', data=xml, headers=headers)
+        # Request token from EarthData website using Basic HTTP Authentication
+        # The max limit for the number of tokens is 2 per user.
+        token = requests.post('https://urs.earthdata.nasa.gov/api/users/token', data=xml, auth=HTTPBasicAuth(username.text, password.text))
         output = token.text
-
-        # Grab token string
-        start = '<id>'
-        end = '</id>'
-        tokenval = (output.split(start))[1].split(end)[0]
-
+        op=json.loads(output)
+        tokenval = op["access_token"]
         return tokenval
-
     except Exception as e:
-        logging.error('### Error occurred in create_token() ###, %s' % e)
+        logging.error(op)
 
 
 # *********************************************SCRIPT ENTRY POINT*************************************
@@ -344,7 +337,7 @@ mosaicDS = myConfig['mosaicDS']
 numProcessed = 0
 # ************************************************Extract PROCESS****************************************
 # DEBUGGING CODE!!!
-# theStartDate = datetime.datetime.strptime("2022/02/22", "%Y/%m/%d")
+# theStartDate = datetime.datetime.strptime("2022/02/26", "%Y/%m/%d")
 theStartDate = GetStartDateFromdb(mosaicDS)  # Get the last raster date from the Mosaic DS...
 
 if theStartDate is None:
@@ -399,11 +392,18 @@ else:
             # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(newtoken) + '&email=lance.gilliland@nasa.gov&FILE_IDS=' + finalName
             # 9/2/2019 - With version 6 of the data starting 8/13/2019, we now have to specify the
             # "subagent type" to get the .tif post processed file
-            url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(
-                newtoken) + '&email=lance.gilliland@nasa.gov&SUBAGENT_ID=HEG&FILE_IDS=' + finalName
 
-            # logging.info('Granule file url: ' + url)
-            response = urllib.request.urlopen(url)
+            # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(
+            #     newtoken) + '&email=lance.gilliland@nasa.gov&SUBAGENT_ID=HEG&FILE_IDS=' + finalName
+
+            url='https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture' \
+                '&email=lance.gilliland@nasa.gov&SUBAGENT_ID=HEG&FILE_IDS=' + finalName
+            try:
+                auth_token =newtoken
+                req = urllib.request.Request(url, None, {"Authorization": "Bearer %s" % auth_token})
+                response = urllib.request.urlopen(req)
+            except Exception as e:
+                print(e)
             # NOTE! The source file might actually be missing from the DAAC and if so, the response will be a
             # URL XML response.  So check the MIME type to see if the response is other than application/octet-stream.
             # If so, we know it is not the desired raster file.
@@ -443,6 +443,32 @@ else:
 
 # Refresh the service to reflect any changes... (note - even if files were not added, some could have been removed.)
 refreshService3x()
+
+#method to revoke an existing token in order to avoid the max token limit error
+def revoke_token(tkn):
+    uid, pswd = myConfig['EarthData_User'], myConfig['EarthData_Pass']
+    from xml.etree.ElementTree import Element, SubElement, Comment, tostring
+
+    hostname = socket.gethostname()
+    IP = socket.gethostbyname(hostname)
+
+    # Create XML input
+    token = Element('token')
+    username = SubElement(token, 'username')
+    username.text = uid
+    password = SubElement(token, 'password')
+    password.text = pswd
+    client_id = SubElement(token, 'client_id')
+    client_id.text = 'NSIDC_client_id'
+    user_ip_address = SubElement(token, 'user_ip_address')
+    user_ip_address.text = IP
+    xml = (tostring(token, encoding='us-ascii', method='xml'))
+    # post call to the api to revoke an existing token. Here we are passing the token we created to the following URL along with Basic HTTP Authentication
+    token = requests.post('https://urs.earthdata.nasa.gov/api/users/revoke_token?token='+tkn, data=xml,
+                      auth=HTTPBasicAuth(username.text, password.text))
+    logging.info('---------- Successfully revoked the created token ----------')
+logging.info('---------- Revoking the token from EarthData in order to avoid reaching max limit of tokens ----------')
+revoke_token(newtoken)
 
 logging.info('Total number of files downloaded for this run: %s' % numProcessed)
 logging.info('******************************SMAP ETL Finished************************************************')
