@@ -26,6 +26,7 @@ import shutil
 import logging
 import pickle
 
+import xml.etree.ElementTree as ET
 # Note: urllib2 was split up into urllib.request and urllib.error for Py3.x+
 # Also, urllib is made up of: urllib.request, urllib.error, urllib.parse, and urllib.robotparser
 import urllib.request  # required in the main entry function and refreshService3x()
@@ -290,6 +291,8 @@ def deleteOutOfDateRasters(mymosaicDS):
 
 
 def create_token(uid, pswd):
+# NOTICE - There is now a /api/users/find_or_create_token() function that we should investigate instead of just always
+# creating a new one and then revoking it.
     op=None
     try:
         # import XML Element Tree
@@ -321,6 +324,99 @@ def create_token(uid, pswd):
         logging.error(op)
 
 
+#method to revoke an existing token in order to avoid the max token limit error
+def revoke_token(tkn):
+    uid, pswd = myConfig['EarthData_User'], myConfig['EarthData_Pass']
+    from xml.etree.ElementTree import Element, SubElement, Comment, tostring
+
+    hostname = socket.gethostname()
+    IP = socket.gethostbyname(hostname)
+
+    # Create XML input
+    token = Element('token')
+    username = SubElement(token, 'username')
+    username.text = uid
+    password = SubElement(token, 'password')
+    password.text = pswd
+    client_id = SubElement(token, 'client_id')
+    client_id.text = 'NSIDC_client_id'
+    user_ip_address = SubElement(token, 'user_ip_address')
+    user_ip_address.text = IP
+    xml = (tostring(token, encoding='us-ascii', method='xml'))
+    # post call to the api to revoke an existing token. Here we are passing the token we created to the following URL along with Basic HTTP Authentication
+    token = requests.post('https://urs.earthdata.nasa.gov/api/users/revoke_token?token='+tkn, data=xml,
+                      auth=HTTPBasicAuth(username.text, password.text))
+    logging.info('---------- Successfully revoked the created token ----------')
+
+
+def get_name_by_id_contains(xml_string_or_bytes, id_substring):
+    """
+    Parses an XML string or bytes and returns the part of the 'name' element's text value
+    after the last colon, if the 'reference' element's 'id' attribute contains the
+    specified substring.
+
+    Example structure passed in:
+    <results>
+        <hits>2</hits>
+        <took>393</took>
+        <references>
+            <reference>
+                <name>SMAP_L3_SM_P_20241202_R19240_001.h5</name>
+                <id>G3314656439-NSIDC_CPRD</id>
+                <location>https://cmr.earthdata.nasa.gov:443/search/concepts/G3314656439-NSIDC_CPRD/2</location>
+                <revision-id>2</revision-id>
+            </reference>
+            <reference>
+                <name>SC:SPL3SMP.009:314116726</name>
+                <id>G3314635282-NSIDC_ECS</id>
+                <location>https://cmr.earthdata.nasa.gov:443/search/concepts/G3314635282-NSIDC_ECS/1</location>
+                <revision-id>1</revision-id>
+            </reference>
+        </references>
+    </results>
+
+        So if you pass in "NSIDC_ECS" for the id_substring, the located name element will be "SPL3SMP.009:314116726",
+        and the function will return "314116726" (the part after the last colon). If the 'name' element does not
+        contain a colon, the function will return the full 'name' value.
+
+    Args:
+        xml_string_or_bytes (str or bytes): The input XML as a string or bytes.
+        id_substring (str): The substring to look for in the 'id' attribute.
+
+    Returns:
+        str: The part of the 'name' value after the last colon if found and applicable,
+             otherwise the full 'name' value if no colon is present, or None if not found.
+    """
+    try:
+        # ET.fromstring can handle both string and bytes.
+        root = ET.fromstring(xml_string_or_bytes)
+
+        # Iterate through all 'reference' elements within 'references'
+        for reference_elem in root.findall(".//reference"):
+            # Get the 'id' element within the current 'reference'
+            id_elem = reference_elem.find("id")
+            if id_elem is not None:
+                reference_id = id_elem.text
+                # Check if the id's text contains the desired substring
+                if reference_id and id_substring in reference_id:
+                    # If it matches, find the 'name' element within the same 'reference'
+                    name_elem = reference_elem.find("name")
+                    if name_elem is not None:
+                        full_name = name_elem.text
+                        # Check if a colon exists in the name
+                        if ":" in full_name:
+                            # Split by the last colon and return the part after it
+                            return full_name.split(":")[-1]
+                        else:
+                            # If no colon, return the full name
+                            return full_name
+        return None # Not found
+    except ET.ParseError as e:
+        print(f"Error parsing XML: {e}")
+        logging.error("Error parsing XML: %s" % e)
+        return None
+
+
 # *********************************************SCRIPT ENTRY POINT*************************************
 # ************************************************INIT PROCESS****************************************
 print("SMAP ETL Started")
@@ -337,7 +433,7 @@ mosaicDS = myConfig['mosaicDS']
 numProcessed = 0
 # ************************************************Extract PROCESS****************************************
 # DEBUGGING CODE!!!
-# theStartDate = datetime.datetime.strptime("2022/02/26", "%Y/%m/%d")
+# theStartDate = datetime.datetime.strptime("2025/02/15", "%Y/%m/%d")
 theStartDate = GetStartDateFromdb(mosaicDS)  # Get the last raster date from the Mosaic DS...
 
 if theStartDate is None:
@@ -364,22 +460,19 @@ else:
         print(tempDate)
 
         # Check URL for granule
-        # 6/15/2018 - Remove version parameter as the version changes from time to time...
-        # granulesUrl = "https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&version=004&temporal="+tempDate+"T00:00:01Z/"+tempDate+"T23:59:59Z"
         granulesUrl = "https://cmr.earthdata.nasa.gov/search/granules?short_name=SPL3SMP&temporal=" + \
                       tempDate + "T00:00:01Z/" + tempDate + "T23:59:59Z"
         response = urllib.request.urlopen(granulesUrl)
         html_bytes = response.read()
         html = html_bytes.decode("utf-8")     # LG 2/23/2022 Added decode of the returned byte str because find was raising an error...
-        startValue = html.find("<name>") + 6
 
-        if startValue > 7:
-            # Parse granule name/ID
-            endValue = html.find("</name>") - len(html)
-            parsedName = html[startValue:endValue]
-            lastColon = parsedName.rfind(':')
-            finalName = parsedName[lastColon + 1:len(parsedName)]
-            logging.info('New granule name: ' + finalName)
+        # The substring to search for in the 'id' element's text
+        id_string = "NSIDC_ECS"
+
+        # Get the granule portion of the name element text.
+        granule_name_part = get_name_by_id_contains(html, id_string)
+        if granule_name_part:
+            logging.info('New granule name: ' + granule_name_part)
 
             rasterFile = myConfig['extract_Folder'] + 'SMAP_' + theStartDate.strftime('%Y%m%d') + '_soil_moisture.tif'
             logging.info('File to be downloaded: ' + rasterFile)
@@ -392,24 +485,23 @@ else:
             # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(newtoken) + '&email=lance.gilliland@nasa.gov&FILE_IDS=' + finalName
             # 9/2/2019 - With version 6 of the data starting 8/13/2019, we now have to specify the
             # "subagent type" to get the .tif post processed file
-
             # url = 'https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture&token=' + str(
             #     newtoken) + '&email=lance.gilliland@nasa.gov&SUBAGENT_ID=HEG&FILE_IDS=' + finalName
 
             url='https://n5eil01u.ecs.nsidc.org/egi/request?short_name=SPL3SMP&format=GeoTIFF&time=2016-12-13,2016-12-13&Coverage=/Soil_Moisture_Retrieval_Data_AM/soil_moisture' \
-                '&email=lance.gilliland@nasa.gov&SUBAGENT_ID=HEG&FILE_IDS=' + finalName
+                '&email=lance.gilliland@nasa.gov&SUBAGENT_ID=HEG&FILE_IDS=' + granule_name_part
             try:
-                auth_token =newtoken
+                auth_token = newtoken
                 req = urllib.request.Request(url, None, {"Authorization": "Bearer %s" % auth_token})
                 response = urllib.request.urlopen(req)
             except Exception as e:
                 print(e)
+                logging.error('### ERROR when requesting download of granule file. Error: %s ###' % e)
+
             # NOTE! The source file might actually be missing from the DAAC and if so, the response will be a
             # URL XML response.  So check the MIME type to see if the response is other than application/octet-stream.
             # If so, we know it is not the desired raster file.
-            # if 'xml' in data[:20]:    # This worked in py 2.7, but not in 3.x - so need to check content type
             info = response.info()
-            # mainmimetype = info.get_content_maintype()
             if info.get_content_maintype() != 'application':
                 # UH OH - response file should be a binary raster file...
                 # ...this means that the raster file must not exist for download.
@@ -423,6 +515,12 @@ else:
                 out_file.write(data)
                 out_file.close()
                 numProcessed += 1
+
+    # Revoke the created user token to avoid going over the max limit of 2 tokens.
+    logging.info(
+        '---------- Revoking the token from EarthData in order to avoid reaching max limit of tokens ----------')
+    print("--- Releasing CMR ECHO API token ---")
+    revoke_token(newtoken)
 
     # ************************************************Transform and Load PROCESS****************************************
     # Up to here, we have downloaded the raster file granules to the temp processing extract folder, but now we need to
@@ -441,34 +539,8 @@ else:
     print("--- Removing out of date Rasters from Mosaic ---")
     deleteOutOfDateRasters(mosaicDS)
 
-# Refresh the service to reflect any changes... (note - even if files were not added, some could have been removed.)
-refreshService3x()
-
-#method to revoke an existing token in order to avoid the max token limit error
-def revoke_token(tkn):
-    uid, pswd = myConfig['EarthData_User'], myConfig['EarthData_Pass']
-    from xml.etree.ElementTree import Element, SubElement, Comment, tostring
-
-    hostname = socket.gethostname()
-    IP = socket.gethostbyname(hostname)
-
-    # Create XML input
-    token = Element('token')
-    username = SubElement(token, 'username')
-    username.text = uid
-    password = SubElement(token, 'password')
-    password.text = pswd
-    client_id = SubElement(token, 'client_id')
-    client_id.text = 'NSIDC_client_id'
-    user_ip_address = SubElement(token, 'user_ip_address')
-    user_ip_address.text = IP
-    xml = (tostring(token, encoding='us-ascii', method='xml'))
-    # post call to the api to revoke an existing token. Here we are passing the token we created to the following URL along with Basic HTTP Authentication
-    token = requests.post('https://urs.earthdata.nasa.gov/api/users/revoke_token?token='+tkn, data=xml,
-                      auth=HTTPBasicAuth(username.text, password.text))
-    logging.info('---------- Successfully revoked the created token ----------')
-logging.info('---------- Revoking the token from EarthData in order to avoid reaching max limit of tokens ----------')
-revoke_token(newtoken)
+    # Refresh the service to reflect any changes... (note - even if files were not added, some could have been removed.)
+    refreshService3x()
 
 logging.info('Total number of files downloaded for this run: %s' % numProcessed)
 logging.info('******************************SMAP ETL Finished************************************************')
